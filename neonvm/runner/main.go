@@ -260,6 +260,13 @@ func createISO9660runtime(diskPath string, command, args, sysctl []string, env [
 				mounts = append(mounts, fmt.Sprintf(`/neonvm/bin/mount %s $(/neonvm/bin/blkid -L %s) %s`, opts, disk.Name, disk.MountPath))
 				// Note: chmod must be after mount, otherwise it gets overwritten by mount.
 				mounts = append(mounts, fmt.Sprintf(`/neonvm/bin/chmod 0777 %s`, disk.MountPath))
+			case disk.Swap != nil:
+				opts := ""
+				if disk.Swap.Discard {
+					opts = "--discard"
+				}
+
+				mounts = append(mounts, fmt.Sprintf(`/neonvm/bin/swapon %s $(/neonvm/bin/blkid -L %s)`, opts, disk.Name))
 			case disk.ConfigMap != nil || disk.Secret != nil:
 				mounts = append(mounts, fmt.Sprintf(`/neonvm/bin/mount -o ro,mode=0644 $(/neonvm/bin/blkid -L %s) %s`, disk.Name, disk.MountPath))
 			case disk.Tmpfs != nil:
@@ -616,6 +623,17 @@ func main() {
 			}
 			discard := ""
 			if disk.EmptyDisk.Discard {
+				discard = ",discard=unmap"
+			}
+			qemuCmd = append(qemuCmd, "-drive", fmt.Sprintf("id=%s,file=%s,if=virtio,media=disk,cache=none%s", disk.Name, dPath, discard))
+		case disk.Swap != nil:
+			logger.Info("creating QCOW2 image for swap", zap.String("diskName", disk.Name))
+			dPath := fmt.Sprintf("%s/%s.qcow2", mountedDiskPath, disk.Name)
+			if err := createQCOW2(disk.Name, dPath, &disk.Swap.Size, nil); err != nil {
+				logger.Fatal("Failed to create QCOW2 image", zap.Error(err))
+			}
+			discard := ""
+			if disk.Swap.Discard {
 				discard = ",discard=unmap"
 			}
 			qemuCmd = append(qemuCmd, "-drive", fmt.Sprintf("id=%s,file=%s,if=virtio,media=disk,cache=none%s", disk.Name, dPath, discard))
